@@ -1,5 +1,7 @@
 # Vault App: Secure Secret Management with Azure UAMI and Spring Cloud Vault
 
+> **<span style="color:red; font-weight:bold;">Project Under Development</span>**
+
 ## Objective
 
 This project demonstrates secure secret management in a Spring Boot application using HashiCorp Vault, authenticated via
