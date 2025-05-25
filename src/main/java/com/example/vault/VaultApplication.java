@@ -1,5 +1,6 @@
 package com.example.vault;
 
+import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -17,6 +18,9 @@ public class VaultApplication implements CommandLineRunner {
 
   @Override
   public void run(String... args) throws Exception {
+
+    Logger logger = Logger.getAnonymousLogger();
+    logger.info(secretFromVault);
     System.out.println("Retrieved secret from vault: " + secretFromVault);
   }
 }

@@ -1,26 +1,24 @@
 package com.example.vault;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
+import org.apache.hc.client5.http.ssl.TrustSelfSignedStrategy;
+import org.apache.hc.core5.ssl.SSLContexts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.BootstrapRegistry;
 import org.springframework.boot.BootstrapRegistryInitializer;
-import org.springframework.boot.web.client.RestTemplateBuilder; // Import RestTemplateBuilder
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.core.env.Environment;
+import org.springframework.http.*;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.vault.authentication.ClientAuthentication;
 import org.springframework.vault.support.VaultToken;
-import org.springframework.web.client.RestClientException; // Import RestClientException for more
-// specific error handling
 import org.springframework.web.client.RestTemplate;
 
 @Configuration
@@ -29,191 +27,126 @@ public class VaultUamiAuthenticationConfiguration implements BootstrapRegistryIn
   private static final Logger logger =
       LoggerFactory.getLogger(VaultUamiAuthenticationConfiguration.class);
 
-  // Inject @Value properties directly into the configuration class (Spring-managed)
-  @Value("${spring.cloud.vault.uri}")
-  private String vaultUri;
-
-  @Value("${vault.auth.azure.role}")
-  private String vaultRole;
-
-  @Value("${vault.auth.azure.resource-id}")
-  private String vaultResourceId;
-
-  @Value("${vault.auth.azure.client-id}")
-  private String clientId;
-
-  /**
-   * Registers a default RestTemplate bean in the BootstrapRegistry. This RestTemplate will pick up
-   * SSL/TLS settings from application.yml.
-   */
-  @Bean
-  public RestTemplate restTemplate(RestTemplateBuilder builder) {
-    return builder.build();
-  }
-
-  /**
-   * Registers the custom Vault UAMI authentication with the Spring bootstrap registry. This method
-   * ensures authentication is available early in the application lifecycle.
-   */
   @Override
   public void initialize(BootstrapRegistry registry) {
-    // Register RestTemplate first so it's available for injection into ClientAuthentication
-    registry.register(
-        RestTemplate.class,
-        context -> context.get(RestTemplate.class)); // Get the RestTemplate bean defined above
-
-    registry.register(
-        ClientAuthentication.class,
-        context -> {
-          // Retrieve the RestTemplate instance from the BootstrapRegistry context
-          RestTemplate restTemplate = context.get(RestTemplate.class);
-
-          // Pass all injected @Value properties and the RestTemplate to the custom authenticator's
-          // constructor
-          return new VaultUamiAuthentication(
-              vaultUri,
-              vaultRole,
-              vaultResourceId,
-              clientId,
-              restTemplate // Pass the properly managed RestTemplate
-              );
-        });
-    logger.info("VaultUamiAuthentication registered in BootstrapRegistry.");
+    String profiles = System.getProperty("spring.profiles.active", "");
+    if (!profiles.contains("local")) {
+      registry.register(RestTemplate.class, ctx -> createRestTemplate());
+      registry.register(
+          ClientAuthentication.class,
+          ctx -> {
+            Environment env = ctx.get(Environment.class);
+            return new VaultUamiAuthentication(
+                env.getProperty("spring.cloud.vault.uri"),
+                env.getProperty("spring.cloud.vault.namespace"),
+                env.getProperty("vault.auth.azure.role"),
+                env.getProperty("vault.auth.azure.resource-id"),
+                env.getProperty("vault.auth.azure.client-id"),
+                ctx.get(RestTemplate.class));
+          });
+      logger.info("vaultUamiAuthentication registered in BootstrapRegistry");
+    }
   }
 
   static class VaultUamiAuthentication implements ClientAuthentication {
-
     private static final Logger logger = LoggerFactory.getLogger(VaultUamiAuthentication.class);
 
-    // Make these fields final, as they will be injected via the constructor
-    private final String vaultUri;
-    private final String vaultRole;
-    private final String vaultResourceId;
-    private final String clientId;
+    private final String vaultUri, vaultNamespace, vaultRole, vaultResourceId, vaultClientId;
     private final RestTemplate restTemplate;
 
-    // Constructor to receive all required values from the outer configuration class
-    public VaultUamiAuthentication(
+    VaultUamiAuthentication(
         String vaultUri,
+        String vaultNamespace,
         String vaultRole,
         String vaultResourceId,
-        String clientId,
+        String vaultClientId,
         RestTemplate restTemplate) {
       this.vaultUri = vaultUri;
+      this.vaultNamespace = vaultNamespace;
       this.vaultRole = vaultRole;
       this.vaultResourceId = vaultResourceId;
-      this.clientId = clientId;
-      this.restTemplate = restTemplate; // Use the injected RestTemplate
+      this.vaultClientId = vaultClientId;
+      this.restTemplate = restTemplate;
     }
 
     @Override
     public VaultToken login() {
-      logger.info("Attempting to authenticate to Vault using UAMI via Entra ID...");
+      logger.info("Authenticating to vault using UAMI via Entra ID...");
       try {
-        // 1. Retrieve the access token from UAMI via Entra ID
         String identityEndpoint = System.getenv("IDENTITY_ENDPOINT");
         String identityHeader = System.getenv("IDENTITY_HEADER");
-        String apiVersion = "2017-09-01"; // Azure IMDS API version
-
-        // Input validation for environment variables
-        if (identityEndpoint == null || identityEndpoint.isEmpty()) {
-          throw new IllegalStateException(
-              "IDENTITY_ENDPOINT environment variable is not set or empty.");
-        }
-        if (identityHeader == null || identityHeader.isEmpty()) {
-          throw new IllegalStateException(
-              "IDENTITY_HEADER environment variable is not set or empty.");
-        }
-
-        // Construct the URL for the Azure IMDS token endpoint.
-        // Use 'client_id' as per Azure IMDS documentation for UAMI.
         String vaultTokenUrl =
             String.format(
-                "%s?resource=%s&api-version=%s&client_id=%s", // Corrected parameter name
-                identityEndpoint, vaultResourceId, apiVersion, clientId);
+                "%s?resource=%s&api-version=2017-09-01&clientId=%s",
+                identityEndpoint, vaultResourceId, vaultClientId);
 
         HttpHeaders headers = new HttpHeaders();
-        headers.set("X-IDENTITY-HEADER", identityHeader); // Required header for IMDS
-        HttpEntity<String> tokenRequest = new HttpEntity<>(headers);
+        headers.set("secret", identityHeader);
+        ResponseEntity<String> identityTokenResponse =
+            restTemplate.exchange(
+                vaultTokenUrl, HttpMethod.GET, new HttpEntity<>(headers), String.class);
 
-        ResponseEntity<String> tokenResponse;
-        try {
-          tokenResponse =
-              restTemplate.exchange(vaultTokenUrl, HttpMethod.GET, tokenRequest, String.class);
-        } catch (RestClientException e) {
+        if (!identityTokenResponse.getStatusCode().is2xxSuccessful()
+            || identityTokenResponse.getBody() == null)
           throw new RuntimeException(
-              "Error fetching access token from Azure IMDS: " + e.getMessage(), e);
-        }
+              "Failed to retrieve access token: " + identityTokenResponse.getStatusCode());
 
-        if (!tokenResponse.getStatusCode().is2xxSuccessful() || tokenResponse.getBody() == null) {
-          throw new RuntimeException(
-              "Failed to retrieve access token from UAMI via Entra ID. Status: "
-                  + tokenResponse.getStatusCode()
-                  + ", Body: "
-                  + tokenResponse.getBody());
-        }
+        String accessToken =
+            new ObjectMapper()
+                .readTree(identityTokenResponse.getBody())
+                .path("access_token")
+                .asText();
 
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode rootNode = mapper.readTree(tokenResponse.getBody());
-        String accessToken = rootNode.path("access_token").asText();
-        if (accessToken.isEmpty()) {
-          throw new RuntimeException("Access token not found in IMDS response from Azure.");
-        }
-        // Log only a portion of the token for security reasons
-        logger.debug(
-            "Successfully retrieved access token from UAMI via Entra ID. Token starts with: {}",
-            accessToken.substring(0, Math.min(accessToken.length(), 10)));
-
-        // 2. Construct the authentication request for Vault
-        // Ensure vaultUri doesn't end with a '/' to prevent double slashes.
-        String vaultBaseUri = vaultUri;
-        if (vaultBaseUri.endsWith("/")) {
-          vaultBaseUri = vaultBaseUri.substring(0, vaultBaseUri.length() - 1);
-        }
-        String vaultAuthUrl =
-            vaultBaseUri + "/v1/auth/azure/login"; // Standard Vault Azure auth path
-
+        String vaultAuthUrl = vaultUri + "/v1/auth/azure/login";
         Map<String, String> requestBody = new HashMap<>();
-        requestBody.put("role", vaultRole); // Vault Azure auth role mapping for policies
-        requestBody.put("jwt", accessToken); // The JWT (access token) from Azure
+        requestBody.put("role", vaultRole);
+        requestBody.put("jwt", accessToken);
 
         HttpHeaders authHeaders = new HttpHeaders();
+        authHeaders.add("X-Vault_Namespace", vaultNamespace);
         authHeaders.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<Map<String, String>> authRequest = new HttpEntity<>(requestBody, authHeaders);
+        authHeaders.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
-        // 3. Send the authentication request to Vault
-        ResponseEntity<String> authResponse;
-        try {
-          authResponse =
-              restTemplate.exchange(vaultAuthUrl, HttpMethod.POST, authRequest, String.class);
-        } catch (RestClientException e) {
+        ResponseEntity<String> authResponse =
+            restTemplate.exchange(
+                vaultAuthUrl,
+                HttpMethod.POST,
+                new HttpEntity<>(requestBody, authHeaders),
+                String.class);
+
+        if (!authResponse.getStatusCode().is2xxSuccessful() || authResponse.getBody() == null)
           throw new RuntimeException(
-              "Error sending authentication request to Vault: " + e.getMessage(), e);
-        }
+              "Failed to authenticate to vault: " + authResponse.getStatusCode());
 
-        if (!authResponse.getStatusCode().is2xxSuccessful() || authResponse.getBody() == null) {
-          throw new RuntimeException(
-              "Failed to authenticate to Vault. Status: "
-                  + authResponse.getStatusCode()
-                  + ", Body: "
-                  + authResponse.getBody());
-        }
-
-        // 4. Handle the authentication response from Vault
-        JsonNode authRootNode = mapper.readTree(authResponse.getBody());
-        String clientToken = authRootNode.path("auth").path("client_token").asText();
-        if (clientToken.isEmpty()) {
-          throw new RuntimeException("Vault client token not found in authentication response.");
-        }
-        logger.info("Successfully authenticated to Vault using Azure UAMI.");
+        String clientToken =
+            new ObjectMapper()
+                .readTree(authResponse.getBody())
+                .path("auth")
+                .path("client_token")
+                .asText();
+        logger.info("Successfully authenticated to vault.");
         return VaultToken.of(clientToken);
       } catch (Exception e) {
-        logger.error(
-            "Critical error during Vault authentication using UAMI via Entra ID: {}",
-            e.getMessage(),
-            e);
+        logger.error("Vault authentication failed: {}", e.getMessage(), e);
         throw new RuntimeException("Vault authentication failed: " + e.getMessage(), e);
       }
+    }
+  }
+
+  private RestTemplate createRestTemplate() {
+    try {
+      var tlsStrategy =
+          new DefaultClientTlsStrategy(
+              SSLContexts.custom().loadTrustMaterial(TrustSelfSignedStrategy.INSTANCE).build());
+      var connectionManager =
+          PoolingHttpClientConnectionManagerBuilder.create()
+              .setTlsSocketStrategy(tlsStrategy)
+              .build();
+      var httpClient = HttpClients.custom().setConnectionManager(connectionManager).build();
+      return new RestTemplate(new HttpComponentsClientHttpRequestFactory(httpClient));
+    } catch (Exception e) {
+      logger.error("SSL configuration failed: {}", e.getMessage(), e);
+      throw new RuntimeException("Failed to configure RestTemplate with SSL: " + e.getMessage(), e);
     }
   }
 }
