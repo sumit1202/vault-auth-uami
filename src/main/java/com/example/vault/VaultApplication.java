@@ -9,7 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class VaultApplication implements CommandLineRunner {
 
-  @Value("${my.secret.from.vault}")
+  @Value("${secret.from.vault}")
   private String secretFromVault;
 
   public static void main(String[] args) {

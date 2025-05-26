@@ -1,1 +1,1 @@
-org.springframework.boot.BootstrapRegistryInitializer = com.example.vault.VaultUamiAuthenticationConfiguration
+org.springframework.boot.BootstrapRegistryInitializer = package com.example.vault.configuration.VaultUamiAuthenticationConfiguration
