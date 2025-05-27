@@ -31,6 +31,8 @@ public class VaultUamiAuthenticationConfiguration implements BootstrapRegistryIn
   public void initialize(BootstrapRegistry registry) {
     String profiles = System.getProperty("spring.profiles.active", "");
     if (!profiles.contains("local")) {
+      registry.register(ClientFactoryWrapper.class, getClientFactoryWrapper());
+      registry.register(RestTemplateBuilder.class, getRestTemplateBuilder());
       registry.register(
           ClientAuthentication.class,
           ctx ->
@@ -42,9 +44,6 @@ public class VaultUamiAuthenticationConfiguration implements BootstrapRegistryIn
                       "vault.uami.resource-id",
                       "vault.uami.client-id")));
       logger.debug("vaultUamiAuthentication registered in BootstrapRegistry");
-
-      registry.register(ClientFactoryWrapper.class, getClientFactoryWrapper());
-      registry.register(RestTemplateBuilder.class, getRestTemplateBuilder());
     }
   }
 
