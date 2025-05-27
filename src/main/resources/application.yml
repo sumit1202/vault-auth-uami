@@ -1,0 +1,33 @@
+# NOTE: Spring CLoud Vault configuration (https://docs.spring.io/spring-cloud-vault/reference/)
+# NOTE: Enterprise HashiCorp Vault
+spring:
+  application:
+    name: vault-app
+  config:
+    # NOTE: https://docs.spring.io/spring-cloud-vault/reference/config-data.html
+    import: vault://first/secret/path, vault://second/secret/path  # e.g.: vault://secret/runtime/secret/from/vault
+  cloud:
+    vault:
+      kv:
+        enabled: true
+      fail-fast: true
+      session:
+        lifecycle:
+          enabled: true
+      config:
+        lifecycle:
+          enabled: true
+
+# NOTE: Custom configuration for vault
+vault:
+  uami:
+    uri: https://vault.example.net
+    namespace:
+    role:
+    resource-id:
+    client-id:
+
+# NOTE: Default value if Vault is not accessible
+secret:
+  from:
+    vault: This is a default value if Vault is not accessible

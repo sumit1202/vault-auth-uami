@@ -16,11 +16,16 @@ import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.vault.support.VaultToken;
 import org.springframework.web.client.RestTemplate;
 
+/**
+ * Service for authenticating to Enterprise HashiCorp Vault using UAMI (User Assigned Managed
+ * Identity) via Entra ID.
+ */
 public class UamiAuthService {
   private static final Logger logger = LoggerFactory.getLogger(UamiAuthService.class);
 
   private final String vaultUri, vaultNamespace, vaultRole, vaultResourceId, vaultClientId;
 
+  /** Constructs the service with Vault and Azure identity parameters. */
   public UamiAuthService(
       String vaultUri,
       String vaultNamespace,
@@ -34,6 +39,12 @@ public class UamiAuthService {
     this.vaultClientId = vaultClientId;
   }
 
+  /**
+   * Authenticates to Vault and returns a VaultToken.
+   *
+   * @return VaultToken on success
+   * @throws RuntimeException on failure
+   */
   public VaultToken authenticate() {
     logger.info("Authenticating to vault using UAMI via Entra ID...");
     try {
@@ -48,9 +59,17 @@ public class UamiAuthService {
     }
   }
 
+  /** Fetches an Azure access token using environment variables. */
   private String fetchAccessToken(RestTemplate restTemplate) throws Exception {
-    String identityEndpoint = System.getenv("IDENTITY_ENDPOINT");
-    String identityHeader = System.getenv("IDENTITY_HEADER");
+    String identityEndpoint = getEnv("IDENTITY_ENDPOINT");
+    String identityHeader = getEnv("IDENTITY_HEADER");
+    if (identityEndpoint == null
+        || identityEndpoint.isEmpty()
+        || identityHeader == null
+        || identityHeader.isEmpty()) {
+      throw new RuntimeException(
+          "IDENTITY_ENDPOINT or IDENTITY_HEADER environment variable is missing");
+    }
     String tokenUrl =
         String.format(
             "%s?resource=%s&api-version=2017-09-01&clientId=%s",
@@ -67,6 +86,7 @@ public class UamiAuthService {
     return new ObjectMapper().readTree(response.getBody()).path("access_token").asText();
   }
 
+  /** Exchanges the Azure access token for a Vault client token. */
   private String fetchVaultToken(RestTemplate restTemplate, String accessToken) throws Exception {
     String vaultAuthUrl = vaultUri + "/v1/auth/azure/login";
     Map<String, String> requestBody = new HashMap<>();
@@ -92,7 +112,8 @@ public class UamiAuthService {
         .asText();
   }
 
-  private RestTemplate createRestTemplate() {
+  /** Creates a RestTemplate with SSL configuration. */
+  protected RestTemplate createRestTemplate() {
     try {
       var tlsStrategy =
           new DefaultClientTlsStrategy(
@@ -107,5 +128,10 @@ public class UamiAuthService {
       logger.error("SSL configuration failed: {}", e.getMessage(), e);
       throw new RuntimeException("Failed to configure RestTemplate with SSL: " + e.getMessage(), e);
     }
+  }
+
+  /** Returns the value of an environment variable. Overridable for testing. */
+  protected String getEnv(String key) {
+    return System.getenv(key);
   }
 }

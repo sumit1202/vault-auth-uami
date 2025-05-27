@@ -2,9 +2,6 @@ package com.example.vault.configuration;
 
 import com.example.vault.delegate.VaultUamiAuthentication;
 import com.example.vault.service.UamiAuthService;
-import java.security.KeyManagementException;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
@@ -22,12 +19,14 @@ import org.springframework.vault.client.RestTemplateBuilder;
 import org.springframework.vault.client.VaultEndpoint;
 import org.springframework.vault.config.AbstractVaultConfiguration.ClientFactoryWrapper;
 
+/** Registers UAMI Vault authentication and HTTP client configuration. */
 @Configuration
 public class VaultUamiAuthenticationConfiguration implements BootstrapRegistryInitializer {
 
   private static final Logger logger =
       LoggerFactory.getLogger(VaultUamiAuthenticationConfiguration.class);
 
+  /** Registers beans for Vault UAMI authentication if not running in 'local' profile. */
   @Override
   public void initialize(BootstrapRegistry registry) {
     String profiles = System.getProperty("spring.profiles.active", "");
@@ -37,7 +36,7 @@ public class VaultUamiAuthenticationConfiguration implements BootstrapRegistryIn
           ctx ->
               new VaultUamiAuthentication(
                   new UamiAuthService(
-                      "https://vault.example.net",
+                      "vault.uami.uri",
                       "vault.uami.namespace",
                       "vault.uami.role",
                       "vault.uami.resource-id",
@@ -49,25 +48,25 @@ public class VaultUamiAuthenticationConfiguration implements BootstrapRegistryIn
     }
   }
 
+  /** Supplies a RestTemplateBuilder with Vault endpoint and namespace. */
   private InstanceSupplier<RestTemplateBuilder> getRestTemplateBuilder() {
     return context ->
         RestTemplateBuilder.builder()
             .requestFactory(context.get(ClientFactoryWrapper.class).getClientHttpRequestFactory())
-            .endpointProvider(() -> VaultEndpoint.from("https://vault.example.net"))
+            .endpointProvider(() -> VaultEndpoint.from("vault.uami.uri"))
             .defaultHeader("X-Vault-Namespace", "vault.uami.namespace");
   }
 
+  /** Supplies a ClientFactoryWrapper with custom SSL configuration. */
   private InstanceSupplier<ClientFactoryWrapper> getClientFactoryWrapper() {
     DefaultClientTlsStrategy tlsStrategy;
     try {
       tlsStrategy =
           new DefaultClientTlsStrategy(
               SSLContexts.custom().loadTrustMaterial(TrustSelfSignedStrategy.INSTANCE).build());
-    } catch (RuntimeException
-        | NoSuchAlgorithmException
-        | KeyStoreException
-        | KeyManagementException e) {
-      throw new RuntimeException("Failed to create TLS strategy", e);
+    } catch (Exception e) {
+      logger.error("Failed to create TLS strategy: {}", e.getMessage());
+      throw new RuntimeException(e);
     }
     var connectionManager =
         PoolingHttpClientConnectionManagerBuilder.create()

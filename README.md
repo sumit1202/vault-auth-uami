@@ -1,66 +1,68 @@
-# Vault App: Secure Secret Management with Azure UAMI and Spring Cloud Vault
+# Vault App: Secure Secret Management with Azure UAMI & Spring Cloud Vault
 
-> **<span style="color:red; font-weight:bold;">Project Under Development</span>**
+> **Project Under Development**
 
-## Objective
+## Overview
 
 This project demonstrates secure secret management in a Spring Boot application using HashiCorp Vault, authenticated via
-Azure User Assigned Managed Identity (UAMI) and Entra ID. The goal is to fetch secrets from Vault at application
-startup, leveraging cloud-native authentication and best practices for secret injection.
+Azure User Assigned Managed Identity (UAMI) and Entra ID. It enables fetching secrets from Vault during the bootstrap
+phase, leveraging cloud-native authentication and best practices for secret injection.
 
-## Usage
+## Prerequisites
 
-### Prerequisites
-
-- Java 17 or later
+- Java 17 or later (Java 21 used in this project)
+- Spring Boot 3.x
+- Spring Cloud Vault dependency
 - Maven
-- HashiCorp Vault instance (local or remote)
+- Enterprise HashiCorp Vault
 - Azure environment with a configured User Assigned Managed Identity (UAMI)
 
-### Configuration
+## Configuration
 
-1. **Vault Setup**
-    - Enable the Azure authentication method in Vault.
-    - Configure a Vault role mapped to your Azure UAMI.
-    - Store secrets in the configured KV backend (default: `secret/vault`).
+### 1. Vault Setup
 
-2. **Environment Variables**
-    - `VAULT_ADDR`: Vault server address (e.g., `http://localhost:8200`)
-    - `vault_RESOURCE_ID`: Azure resource ID for the UAMI
-    - `IDENTITY_ENDPOINT` and `IDENTITY_HEADER`: Provided by Azure for UAMI authentication
+- Enable the Azure authentication method in Vault.
+- Configure a Vault role mapped to your Azure UAMI.
+- Store secrets in the desired KV backend (e.g., `secret/vault`).
 
-3. **Application Properties**
-    - Edit `src/main/resources/application.properties` as needed for your environment. (Also look for inline comments
-      for more info)
+### 2. Environment Variables
 
-### Running the Application
+Set the following environment variables:
 
-```
+- `IDENTITY_ENDPOINT` and `IDENTITY_HEADER`: Provided by Azure for UAMI authentication
+
+### 3. Application Properties
+
+Edit `src/main/resources/application.properties` as required for your environment.
+
+## Running the Application
+
+```sh
 ./mvnw spring-boot:run
 ```
 
-On startup, the application will authenticate to Vault using Azure UAMI, fetch the configured secret, and print it to
+On startup, the application authenticates to Vault using Azure UAMI, retrieves the configured secret, and prints it to
 the console.
 
-## Working Flow
+## Workflow
 
 1. **Bootstrap Phase**
     - Spring Cloud Vault loads configuration from Vault using a custom `ClientAuthentication`.
-    - The custom authentication retrieves a JWT from Azure IMDS using UAMI.
-    - The JWT is sent to Vault's Azure auth endpoint to obtain a Vault token.
+    - The authentication retrieves a JWT from Azure IMDS using UAMI.
+    - The JWT is exchanged for a Vault token via the Azure auth endpoint.
 
 2. **Secret Injection**
     - Secrets from Vault are injected into Spring properties (e.g., `my.secret.from.vault`).
-    - The application uses these secrets at runtime, demonstrated by printing the secret on startup.
+    - The application uses these secrets at runtime.
 
 3. **Failover**
     - If Vault is unavailable, a default value from `bootstrap.yml` or `application.properties` is used (if configured).
 
 ## Project Structure
 
-- `VaultApplication.java`: Main Spring Boot application, prints the secret.
+- `VaultApplication.java`: Main Spring Boot application entry point.
 - `VaultUamiAuthenticationConfiguration.java`: Custom Vault authentication using Azure UAMI.
-- `application.properties` & `bootstrap.yml`: Configuration files for Spring Cloud Vault and secret management.
+- `application.properties`, `bootstrap.yml`: Configuration files for Spring Cloud Vault and secret management.
 
 ## References
 
@@ -69,6 +71,8 @@ the console.
 - [Azure Managed Identities](https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview)
 
 ---
-This project is intended for educational and demonstration purposes. Adapt configurations and security settings for
-production use.
 
+_This project is intended for educational and demonstration purposes. Adapt configurations and security settings for
+production use._
+
+```
