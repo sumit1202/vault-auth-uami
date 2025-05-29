@@ -21,10 +21,10 @@ spring:
 # NOTE: Custom configuration for vault
 vault:
   uami:
-    uri: https://vault.example.local.net # FIXME: change-it
-    namespace: ABC123 # FIXME: change-it
-    role: uami_local_xyz_001 # FIXME: change-it
-    resource: api://vault.local.net # FIXME: change-it
+    uri: https://vault.example.dev.net # FIXME: change-it
+    namespace: XYZ123 # FIXME: change-it
+    role: uami_dev_xyz_001 # FIXME: change-it
+    resource: api://vault.dev.net # FIXME: change-it
     client-id:   # FIXME: change-it
 
 # NOTE: Secret to be sourced from vault
